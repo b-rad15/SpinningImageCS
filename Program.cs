@@ -1,11 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Xml.Linq;
 using FFMpegCore;
 using FFMpegCore.Arguments;
 using FFMpegCore.Extend;
 using FFMpegCore.Pipes;
 using ImageMagick;
+using CMK;
 
 namespace SpinningImageCS
 {
@@ -19,29 +24,45 @@ namespace SpinningImageCS
 				throw new ArgumentException(
 					$"100/frameRate must be a positive integer according to the gif standard, {ticksPerFrame} is not a positive integer");
 			}
-			var spinningFramesSource = new RawVideoPipeSource(MakeSpinningFrames(image, rotationalPeriod, framerate))
+
+			var frames = MakeSpinningFrames(image, rotationalPeriod, framerate);
+			Queue<Task> fileWrites = new();
+			for (int i = 0; frames.MoveNext(); i++)
 			{
-				FrameRate = framerate
-			};
+				fileWrites.Enqueue(frames.Current.WriteAsync(new FileStream($"out/{i:D5}.png", FileMode.Create), MagickFormat.Png));
+			}
+
+			foreach (Task fileWrite in fileWrites)
+			{
+				fileWrite.Wait();
+			}
 			Console.WriteLine(FFMpegArguments
-				.FromPipeInput(spinningFramesSource)
-				.OutputToFile(filename, true, options => options
-					.WithCustomArgument($"-filter_complex [0:v]scale=-2:{image.Height}:flags=bicubic,split[a][b];[a]palettegen[p];[b][p]paletteuse")
+				.FromFileInput("out/%05d.png", verifyExists:false, addArguments:inputArgs => inputArgs.WithFramerate(framerate))
+				.OutputToFile(filename + ".mp4", true, options => options
+					// .WithCustomArgument($"-filter_complex [0:v]scale=-2:{image.Height}:flags=bicubic,split[a][b];[a]palettegen[p];[b][p]paletteuse")
+					.WithCustomArgument("-crf 30")
 				)
 				.ProcessSynchronously());
 
 		}
-		static IEnumerable<IVideoFrame> MakeSpinningFrames(MagickImage image, double rotationalPeriodSeconds, double frameRate)
+		static IEnumerator<MagickImage> MakeSpinningFrames(MagickImage image, double rotationalPeriodSeconds, double frameRate)
 		{
 			return MakeSpinningFrames(image, (int) Math.Round(rotationalPeriodSeconds * frameRate, 0));
 		}
 
-		static IEnumerable<IVideoFrame> MakeSpinningFrames(MagickImage image, int frames)
+		static IEnumerator<MagickImage> MakeSpinningFrames(MagickImage image, int frames, MagickFormat format = MagickFormat.Png)
 		{
 			var interval = Math.Tau / frames;
+			var reverseFrames = new Stack<MagickImage>();
 			for (double radians = 0; radians < Math.Tau; radians += interval)
 			{
-				yield return new BitmapVideoFrameWrapper(SpinImageToRadians(image, radians).ToBitmap());
+				var spinImageToRadians = SpinImageToRadians(image, radians);
+				reverseFrames.Push(spinImageToRadians);
+				yield return spinImageToRadians;
+			}
+			foreach (var reverseFrame in reverseFrames)
+			{
+				yield return reverseFrame;
 			}
 		}
 
@@ -61,7 +82,6 @@ namespace SpinningImageCS
 			};
 			spunImage.Resize(resizeGeo);
 			spunImage.Extent(image.Width, image.Height, Gravity.Center);
-			spunImage.BackgroundColor = MagickColors.Black;
 			return spunImage;
 		}
 		static void Main(string[] args)
@@ -116,7 +136,7 @@ namespace SpinningImageCS
 				}
 				overwrite = true;
 			}
-			MakeSpinningGif(new(imageFile), rotationPeriod, 100, filename, overwrite);
+			MakeSpinningGif(new(imageFile) {HasAlpha = true}, rotationPeriod, 100, filename, overwrite);
 		}
 	}
 }
