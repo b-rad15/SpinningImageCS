@@ -61,6 +61,7 @@ namespace SpinningImageCS
 			};
 			spunImage.Resize(resizeGeo);
 			spunImage.Extent(image.Width, image.Height, Gravity.Center);
+			spunImage.BackgroundColor = MagickColors.Black;
 			return spunImage;
 		}
 		static void Main(string[] args)
