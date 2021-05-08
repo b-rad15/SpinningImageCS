@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "SpinningImageCS": {
+      "commandName": "Project",
+      "commandLineArgs": "rima.png 0.5 true",
+      "workingDirectory": "C:\\Users\\brado\\OneDrive - stevens.edu\\programs\\SpinningImageCS"
+    }
+  }
+}
